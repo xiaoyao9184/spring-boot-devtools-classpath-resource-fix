@@ -21,6 +21,7 @@ import javax.servlet.Servlet;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.net.URLClassLoader;
 import java.util.*;
 import java.util.jar.Manifest;
 
@@ -64,10 +65,16 @@ public class DevToolClassPathResourceJarsSupportAutoConfigure {
         try {
             Set<URL> urlSet = new LinkedHashSet<>();
 
-            Enumeration<URL> enumeration = cl.getResources("META-INF/MANIFEST.MF");
+            List<URL> list;
+            if(cl instanceof URLClassLoader){
+                URLClassLoader urlClassLoader = (URLClassLoader) cl;
+                list = Arrays.asList(urlClassLoader.getURLs());
+            }else{
+                Enumeration<URL> enumeration = cl.getResources("META-INF/MANIFEST.MF");
+                list = Collections.list(enumeration);
+            }
 
-            while (enumeration.hasMoreElements()){
-                URL url = enumeration.nextElement();
+            for (URL url : list) {
                 if (url != null) {
                     Manifest manifest = new Manifest(url.openStream());
 
