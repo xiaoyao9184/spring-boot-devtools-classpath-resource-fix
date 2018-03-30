@@ -16,13 +16,17 @@ import org.springframework.boot.context.embedded.tomcat.TomcatEmbeddedServletCon
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
+import org.springframework.util.StringUtils;
 
 import javax.servlet.Servlet;
+import java.io.File;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.util.*;
+import java.util.jar.Attributes;
+import java.util.jar.JarFile;
 import java.util.jar.Manifest;
 
 /**
@@ -55,48 +59,98 @@ public class DevToolClassPathResourceJarsSupportAutoConfigure {
         return factory;
     }
 
-
     private List<URL> getUrlsOfJarsWithMetaInfResources() {
         ClassLoader classLoader = getClass().getClassLoader();
         return Arrays.asList(getJarUrlsFromManifests(classLoader));
     }
 
-    private URL[] getJarUrlsFromManifests(ClassLoader cl) {
+    private static URL[] getJarUrlsFromManifests(ClassLoader cl) {
+        List<URL> list;
+        if(cl instanceof URLClassLoader){
+            URLClassLoader urlClassLoader = (URLClassLoader) cl;
+            list = getUrlsFromClassPathOfJarManifestIfPossibleUseURLClassLoader(urlClassLoader);
+        }else{
+            list = getUrlsFromClassPathOfJarManifestIfPossibleUseClassLoaderGetResources(cl);
+        }
+        return list.toArray(new URL[]{});
+    }
+
+
+    private static List<URL> getUrlsFromClassPathOfJarManifestIfPossibleUseClassLoaderGetResources(ClassLoader classLoader){
         try {
-            Set<URL> urlSet = new LinkedHashSet<>();
+            List<URL> urlSet = new LinkedList<>();
 
-            List<URL> list;
-            if(cl instanceof URLClassLoader){
-                URLClassLoader urlClassLoader = (URLClassLoader) cl;
-                list = Arrays.asList(urlClassLoader.getURLs());
-            }else{
-                Enumeration<URL> enumeration = cl.getResources("META-INF/MANIFEST.MF");
-                list = Collections.list(enumeration);
-            }
-
-            for (URL url : list) {
+            Enumeration<URL> enumeration = classLoader.getResources("META-INF/MANIFEST.MF");
+            while (enumeration.hasMoreElements()){
+                URL url = enumeration.nextElement();
                 if (url != null) {
                     Manifest manifest = new Manifest(url.openStream());
-
-                    String classPath = manifest.getMainAttributes().getValue("Class-Path");
-
-                    if (classPath != null) {
-                        for (String urlStr : classPath.split(" ")) {
-                            try {
-                                urlSet.add(new URL(urlStr));
-                            } catch (MalformedURLException ex) {
-                                //ignore
-                                //example; jtds use this 'Class-Path: jcifs.jar'
-//                                throw new AssertionError();
-                            }
-                        }
-                    }
+                    urlSet.addAll(getUrlsFromClassPathAttribute(url,manifest));
                 }
             }
-
-            return urlSet.toArray(new URL[urlSet.size()]);
+            return urlSet;
         } catch (IOException ex) {
             throw new RuntimeException(ex);
         }
+    }
+
+    private static List<URL> getUrlsFromClassPathOfJarManifestIfPossibleUseURLClassLoader(URLClassLoader classLoader){
+        List<URL> result = new ArrayList<>();
+        List<URL> jarList = Arrays.asList(classLoader.getURLs());
+        for (URL url : jarList) {
+            result.addAll(getUrlsFromClassPathOfJarManifestIfPossible(url));
+        }
+        return result;
+    }
+
+    private static List<URL> getUrlsFromClassPathOfJarManifestIfPossible(URL url) {
+        JarFile jarFile = getJarFileIfPossible(url);
+        if (jarFile == null) {
+            return Collections.<URL>emptyList();
+        }
+        try {
+            return getUrlsFromClassPathAttribute(url, jarFile.getManifest());
+        }
+        catch (IOException ex) {
+            throw new IllegalStateException(
+                    "Failed to read Class-Path attribute from manifest of jar " + url,
+                    ex);
+        }
+    }
+
+    private static JarFile getJarFileIfPossible(URL url) {
+        try {
+            File file = new File(url.toURI());
+            if (file.isFile()) {
+                return new JarFile(file);
+            }
+        }
+        catch (Exception ex) {
+            // Assume it's not a jar and continue
+        }
+        return null;
+    }
+
+    private static List<URL> getUrlsFromClassPathAttribute(URL base, Manifest manifest) {
+        if (manifest == null) {
+            return Collections.<URL>emptyList();
+        }
+        String classPath = manifest.getMainAttributes()
+                .getValue(Attributes.Name.CLASS_PATH);
+        if (!StringUtils.hasText(classPath)) {
+            return Collections.emptyList();
+        }
+        String[] entries = StringUtils.delimitedListToStringArray(classPath, " ");
+        List<URL> urls = new ArrayList<URL>(entries.length);
+        for (String entry : entries) {
+            try {
+                urls.add(new URL(base, entry));
+            }
+            catch (MalformedURLException ex) {
+                throw new IllegalStateException(
+                        "Class-Path attribute contains malformed URL", ex);
+            }
+        }
+        return urls;
     }
 }
