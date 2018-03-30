@@ -21,10 +21,7 @@ import javax.servlet.Servlet;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.util.Arrays;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.jar.Manifest;
 
 /**
@@ -67,19 +64,22 @@ public class DevToolClassPathResourceJarsSupportAutoConfigure {
         try {
             Set<URL> urlSet = new LinkedHashSet<>();
 
-            URL url = cl.getResource("META-INF/MANIFEST.MF");
+            Enumeration<URL> enumeration = cl.getResources("META-INF/MANIFEST.MF");
 
-            if (url != null) {
-                Manifest manifest = new Manifest(url.openStream());
+            while (enumeration.hasMoreElements()){
+                URL url = enumeration.nextElement();
+                if (url != null) {
+                    Manifest manifest = new Manifest(url.openStream());
 
-                String classPath = manifest.getMainAttributes().getValue("Class-Path");
+                    String classPath = manifest.getMainAttributes().getValue("Class-Path");
 
-                if (classPath != null) {
-                    for (String urlStr : classPath.split(" ")) {
-                        try {
-                            urlSet.add(new URL(urlStr));
-                        } catch (MalformedURLException ex) {
-                            throw new AssertionError();
+                    if (classPath != null) {
+                        for (String urlStr : classPath.split(" ")) {
+                            try {
+                                urlSet.add(new URL(urlStr));
+                            } catch (MalformedURLException ex) {
+                                throw new AssertionError();
+                            }
                         }
                     }
                 }
