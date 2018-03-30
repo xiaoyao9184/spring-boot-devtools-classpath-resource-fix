@@ -78,7 +78,9 @@ public class DevToolClassPathResourceJarsSupportAutoConfigure {
                             try {
                                 urlSet.add(new URL(urlStr));
                             } catch (MalformedURLException ex) {
-                                throw new AssertionError();
+                                //ignore
+                                //example; jtds use this 'Class-Path: jcifs.jar'
+//                                throw new AssertionError();
                             }
                         }
                     }
